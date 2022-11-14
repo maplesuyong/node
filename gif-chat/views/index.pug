@@ -1,0 +1,20 @@
+doctype
+html
+  head
+    meta(charset='utf-8')
+    title GIF 채팅방
+  body
+    div F12를 눌러 console 탭과 network 탭을 확인하세요.
+    //- socket.io/socket.io.js : Socket.IO에서 클라이언트로 제공하는 스크립트
+    script(src='/socket.io/socket.io.js')
+    script.
+      //- 스크립트가 제공하는 io 객체에 서버 주소를 적어 연결
+      var socket = io.connect("http://localhost:8005", {  // ws 프로토콜이 아닌 http 프로토콜을 사용
+        path:'/socket.io',  // socket.js(서버)의 io 객체의 path 옵션의 주소와 일치해야함
+        transports: ['websocket']   // 처음부터 웹 소켓만 사용하고 싶을 때 사용하는 옵션
+      });
+      // 서버에서 보내는 news 이벤트를 받기 위해 news 이벤트 리스너 사용
+      socket.on('news', function (data) {
+        console.log(data);
+        socket.emit('reply', 'Hello Node.JS');
+      });

@@ -1,0 +1,179 @@
+extends layout
+
+block content
+  h1= title
+  a#exit-btn(href='/') 방 나가기
+  #number
+    | 참여자 수:
+    #number-count= number
+  #owner
+    | 방장:
+    span#room-owner(style='color:' + room.owner)= room.owner
+  fieldset
+    legend 채팅 내용
+    #chat-list
+      for chat in chats
+        if chat.user === user   // 현재 사용자(user)의 채팅이면, class = mine
+          .mine(style='color:' + chat.user)   
+            div= chat.user
+            if chat.gif
+              img(src='/gif/' + chat.gif)
+            else
+              div= chat.chat
+        else if chat.user ==='system'   // 시스템의 채팅이면, class = system
+          .system
+            div= chat.chat
+        else  // 다른 사람의 채팅이면, class = other
+          .other(style='color:' + chat.user)
+            div= chat.user
+            if chat.gif
+              img(src='/gif/' + chat.gif)
+            else
+              div= chat.chat
+    form#chat-form(action='/chat' method='post' enctype='multipart/form-data')
+      label(for='gif') GIF 올리기
+      input#gif(type='file' name='gif' accept='image/gif')
+      input#chat(name='chat')
+      button(type='submit') 전송
+    script(src='/socket.io/socket.io.js')
+    script.
+      // 서버에서 /chat 네임스페이스로 보낸 데이터만 받을 수 있다
+      var socket = io.connect('http://localhost:8005/chat', {
+        path:'/socket.io'
+      });
+
+      // join : 사용자 입장에 관한 데이터가 웹 소켓으로 전송될 때 호출
+      socket.on('join', function (data) {
+        // 참여자 수를 나타내는 div(#number-count)에 실시간으로 참여자 수(data.number)를 업데이트
+        document.querySelector('#number-count').textContent = data.number;
+        var div = document.createElement('div');
+        div.classList.add('system');
+        var chat = document.createElement('div');
+        div.textContent = data.chat;
+        div.appendChild(chat);
+        document.querySelector('#chat-list').appendChild(div);
+      });
+
+      // exit : 사용자 퇴장에 관한 데이터가 웹 소켓으로 전송될 때 호출
+      socket.on('exit', function (data) {
+        // 참여자 수를 나타내는 div(#number-count)에 실시간으로 참여자 수(data.number)를 업데이트
+        document.querySelector('#number-count').textContent = data.number;
+        var div = document.createElement('div');
+        div.classList.add('system');
+        var chat = document.createElement('div');
+        div.textContent = data.chat;
+        div.appendChild(chat);
+        document.querySelector('#chat-list').appendChild(div);
+      });
+
+      // chat : 채팅 메시지가 웹 소켓으로 전송될 때 호출
+      socket.on('chat', function (data) {
+        var div = document.createElement('div');
+        // 채팅 메시지 발송자(data.user)에 따라 내 메시지인지 남의 메시지인지 확인
+        if (data.user ==='#{user}') {
+          div.classList.add('mine');  // 그에 맞는 색상으로 div의 class 속성을 부여 (mine)
+        } else {
+          div.classList.add('other');   // 그에 맞는 색상으로 div의 class 속성을 부여 (other)
+        }
+
+        // 귓속말 버튼 만들기
+        var name = document.createElement('div');
+        name.textContent = data.user;
+        name.className = 'chat-user';
+        if (data.user !== '#{user}') {   // 나에게는 귓속말 버튼 안보이게 설정하는 조건문
+          var dm = document.createElement('button');
+          dm.textContent = '귓속말';
+          dm.className = 'dm';
+          dm.dataset.socket = data.socket;  // dataset에 data.socket(아이디)를 넣는다
+          dm.addEventListener('click', sendDM);   // sendDM라는 클릭 이벤트 리스너를 추가
+          name.appendChild(dm);
+        }
+
+        // 강퇴 버튼 만들기
+        var banBtn = document.createElement('button');
+        banBtn.className = 'ban';
+        banBtn.textContent = '강퇴';
+        banBtn.dataset.socket = data.socket;
+        banBtn.addEventListener('click', ban);
+        name.appendChild(banBtn);
+        div.appendChild(name);
+        if (data.chat) {
+          var chat = document.createElement('div');
+          chat.textContent = data.chat;
+          div.appendChild(chat);
+        } else {
+          var gif = document.createElement('img');
+          gif.src ='/gif/' + data.gif;
+          div.appendChild(gif);
+        }
+        div.style.color = data.user;
+        document.querySelector('#chat-list').appendChild(div);
+      });
+
+      // 채팅을 전송하는 폼(#chat-form)에 submit 이벤트 리스너 추가
+      document.querySelector('#chat-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        if (e.target.chat.value) {
+          var xhr = new XMLHttpRequest();
+          xhr.onload = function () {
+            if (xhr.status === 200) {
+              e.target.chat.value ='';
+            } else {
+              console.error(xhr.responseText);
+            }
+          };
+          xhr.open('POST','/room/#{room._id}/chat');
+          xhr.setRequestHeader('Content-Type','application/json');
+          xhr.send(JSON.stringify({ chat: this.chat.value, sid: socket.id }));
+        }
+      });
+
+      // 업로드 인풋 태그(#gif)에 이미지를 선택했을 때 업로드하는 이벤트 리스너 추가
+      document.querySelector('#gif').addEventListener('change', function (e) {
+        var formData = new FormData();
+        var xhr = new XMLHttpRequest();
+        console.log(e.target.files);
+        formData.append('gif', e.target.files[0]);
+        xhr.onload = function () {
+          if (xhr.status === 200) {
+            e.target.file = null;
+          } else {
+            console.error(xhr.responseText);
+          }
+        };
+        xhr.open('POST','/room/#{room._id}/gif');
+        xhr.send(formData);
+      });
+
+      var sendDM = function (e) {
+        var id = e.target.dataset.socket;
+        var prompt = window.prompt('귓속말을 입력하세요.');
+        socket.emit('dm', { target: id, msg: prompt, from: '#{user}' });
+      };
+      Array.prototype.forEach.call(document.querySelectorAll('.dm'), function (el) {
+        el.addEventListener('click', sendDM);
+      });
+      // 귓속말이 오면 alert를 띄운다
+      socket.on('dm', function (data) {
+        alert(data.from + '님에게서 귓속말이 도착했습니다: ' + data.msg);
+      });
+
+      // 강퇴 이벤트
+      function ban(e) {
+        var id = e.target.dataset.socket;
+        var name = e.target.textContent;
+        var owner = document.getElementById('room-owner').textContent;
+        console.log('#{user}', owner);
+        if ('#{user}' === owner && name !== owner) {
+          if (confirm(`${name}를 강퇴하시겠습니까?`)) {
+            socket.emit('ban', { id });
+          }
+        }
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('.ban'), function (el) {
+        el.addEventListener('click', ban);
+      });
+      socket.on('ban', function() {
+        alert('강퇴되었습니다.');
+        location.href = '/';
+      });

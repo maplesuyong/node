@@ -1,0 +1,7 @@
+extends layout
+
+block content
+  h1= message
+  h2= error.status
+  //- error.stack (에러에 관한 상세 메시지)
+  pre #{error.stack}
